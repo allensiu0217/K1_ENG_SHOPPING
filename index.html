@@ -1,0 +1,709 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>K1 字母超市購物</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: 'Comic Sans MS', 'Chalkboard SE', '微軟正黑體', sans-serif;
+            user-select: none;
+            -webkit-user-select: none;
+            touch-action: none; /* 防止畫面跟著手指滑動 */
+            background-color: #fffbeb;
+            background-image: 
+                linear-gradient(90deg, transparent 79px, #fde68a 79px, #fde68a 81px, transparent 81px),
+                linear-gradient(#eee 1px, transparent 1px);
+            background-size: 80px 80px;
+        }
+
+        .btn-3d {
+            transition: all 0.1s;
+            box-shadow: 0 6px 0px rgba(0,0,0,0.2);
+        }
+        .btn-3d:active {
+            transform: translateY(6px);
+            box-shadow: 0 0px 0px rgba(0,0,0,0.2);
+        }
+
+        /* 掉落的字母 */
+        .falling-item {
+            position: absolute;
+            transition: transform 0.1s linear;
+            will-change: transform;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        /* 接對時的特效 */
+        @keyframes catchPop {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.5); opacity: 0.8; }
+            100% { transform: scale(0); opacity: 0; }
+        }
+        .animate-catch { animation: catchPop 0.4s ease-out forwards; }
+
+        /* 接錯時的彈開特效 */
+        @keyframes bounceAway {
+            0% { transform: translate(0, 0) rotate(0deg); }
+            100% { transform: translate(100px, -100px) rotate(180deg) scale(0); opacity: 0; }
+        }
+        .animate-bounce-away { animation: bounceAway 0.5s ease-in forwards; }
+
+        /* 清單打勾動畫 */
+        @keyframes checkMark {
+            0% { transform: scale(0); }
+            50% { transform: scale(1.3); }
+            100% { transform: scale(1); }
+        }
+        .animate-check { animation: checkMark 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; }
+
+        /* 星星浮動 */
+        @keyframes floatUp {
+            0% { transform: translateY(0) scale(0.5) rotate(0deg); opacity: 1; }
+            100% { transform: translateY(-150px) scale(1.5) rotate(90deg); opacity: 0; }
+        }
+        .star-particle {
+            position: absolute;
+            font-size: 3rem;
+            pointer-events: none;
+            animation: floatUp 1s ease-out forwards;
+        }
+    </style>
+</head>
+<body class="h-screen w-screen overflow-hidden relative">
+
+    <!-- 主選單畫面 -->
+    <div id="menu-screen" class="w-full h-full flex flex-col items-center justify-center p-4 z-20 absolute inset-0 bg-[#fffbeb]">
+        <h1 class="text-4xl md:text-6xl font-black text-orange-500 mb-4 text-center drop-shadow-md">
+            🛒 超市字母收集 🍎
+        </h1>
+        
+        <div class="bg-white p-6 rounded-3xl w-full max-w-2xl border-4 border-orange-300 shadow-sm mb-6 text-center">
+            <h2 class="text-2xl text-gray-700 font-bold mb-2">任務說明：</h2>
+            <p class="text-xl text-gray-500 font-bold">左右滑動購物車，接住清單上的 5 個字母！</p>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 w-full max-w-2xl">
+            <button onclick="startGame(0)" class="btn-3d bg-pink-400 text-white text-3xl font-black py-5 rounded-3xl border-4 border-pink-500 hover:bg-pink-300">A - E</button>
+            <button onclick="startGame(1)" class="btn-3d bg-orange-400 text-white text-3xl font-black py-5 rounded-3xl border-4 border-orange-500 hover:bg-orange-300">F - J</button>
+            <button onclick="startGame(2)" class="btn-3d bg-green-400 text-white text-3xl font-black py-5 rounded-3xl border-4 border-green-500 hover:bg-green-300">K - O</button>
+            <button onclick="startGame(3)" class="btn-3d bg-blue-400 text-white text-3xl font-black py-5 rounded-3xl border-4 border-blue-500 hover:bg-blue-300">P - T</button>
+            <button onclick="startGame(4)" class="btn-3d bg-purple-400 text-white text-3xl font-black py-5 rounded-3xl border-4 border-purple-500 hover:bg-purple-300 md:col-span-2">U - Z</button>
+        </div>
+    </div>
+
+    <!-- 遊戲畫面 -->
+    <div id="game-screen" class="w-full h-full hidden flex-col relative">
+        
+        <!-- 頂部：購物清單 -->
+        <div class="w-full bg-white border-b-4 border-orange-200 p-2 md:p-4 z-10 shadow-sm flex flex-col items-center relative">
+            <div class="flex w-full justify-between items-center mb-1">
+                <button onclick="showMenu()" class="btn-3d bg-gray-400 text-white text-sm md:text-lg font-bold py-1 px-3 md:px-4 rounded-xl border-b-4 border-gray-500 hover:bg-gray-300">
+                    🏠 返回
+                </button>
+                <div id="stage-display" class="text-lg md:text-xl font-black text-blue-500 bg-blue-100 px-4 py-1 rounded-full border-2 border-blue-300 absolute left-1/2 -translate-x-1/2">
+                    Stage 1/3
+                </div>
+                <div class="w-16"></div> <!-- 佔位對齊 -->
+            </div>
+            
+            <!-- 目標字母與進度區塊 -->
+            <div class="flex flex-col items-center mt-2">
+                <div class="text-4xl md:text-5xl font-black text-orange-600 mb-2 drop-shadow-sm flex items-center gap-3 bg-yellow-50 px-6 py-2 rounded-2xl border-4 border-yellow-200">
+                    <span id="target-upper">A</span>
+                    <span id="target-lower" class="text-3xl md:text-4xl">a</span>
+                    <span id="target-emoji" class="text-5xl md:text-6xl drop-shadow-md">🍎</span>
+                </div>
+                <!-- 5 個進度槽 -->
+                <div id="progress-slots" class="flex justify-center gap-2 mt-1">
+                    <!-- 由 JS 動態生成 -->
+                </div>
+            </div>
+        </div>
+
+        <!-- 遊戲主區域 (掉落區) -->
+        <div id="play-area" class="flex-1 relative overflow-hidden" style="touch-action: none;">
+            
+            <!-- 購物車 -->
+            <div id="cart" class="absolute bottom-4 w-24 h-24 md:w-32 md:h-32 z-20 flex items-center justify-center transform -translate-x-1/2" style="left: 50%;">
+                <div id="cart-inner" class="text-7xl md:text-8xl drop-shadow-lg transition-transform">🛒</div>
+            </div>
+            
+        </div>
+
+        <!-- 慶祝特效容器 -->
+        <div id="celebration-container" class="fixed inset-0 pointer-events-none flex items-center justify-center z-50"></div>
+
+        <!-- 通關特快畫面 -->
+        <div id="level-up-screen" class="fixed inset-0 bg-orange-500 bg-opacity-95 z-50 hidden flex-col items-center justify-center transition-opacity duration-500 z-[60]">
+            <div class="bg-white p-8 md:p-12 rounded-[3rem] border-8 border-yellow-400 shadow-2xl flex flex-col items-center transform scale-0 transition-transform duration-500" id="level-up-box">
+                <h2 id="level-up-title" class="text-5xl md:text-7xl font-black text-orange-500 mb-2 text-center drop-shadow-md animate-bounce">
+                    STAGE CLEAR!
+                </h2>
+                
+                <!-- 大大個圖像獲得區 -->
+                <div id="giant-reward-emoji" class="text-[8rem] md:text-[10rem] drop-shadow-xl my-2 animate-pop hidden">🍎</div>
+                
+                <!-- 最終袋裝滿食物畫面 -->
+                <div id="full-bag-display" class="hidden flex-col items-center my-4">
+                    <div class="text-[7rem] md:text-[9rem] drop-shadow-xl animate-bounce">🛍️</div>
+                    <div id="collected-items" class="flex flex-wrap justify-center gap-2 text-4xl md:text-5xl mt-4 bg-orange-100 p-4 rounded-2xl border-4 border-orange-300"></div>
+                </div>
+
+                <div id="level-up-stars" class="flex gap-4 mb-4 text-5xl md:text-6xl">🌟🌟🌟</div>
+                <p id="level-up-msg" class="text-3xl font-bold text-gray-600 text-center mb-8">收集完成，好棒！</p>
+                <button id="finish-btn" onclick="showMenu()" class="hidden btn-3d bg-green-400 text-white text-3xl font-black py-4 px-10 rounded-3xl border-4 border-green-500 hover:bg-green-300">
+                    再玩一次
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 字母群組與圖案定義
+        const letterGroups = [
+            ['A', 'B', 'C', 'D', 'E'],
+            ['F', 'G', 'H', 'I', 'J'],
+            ['K', 'L', 'M', 'N', 'O'],
+            ['P', 'Q', 'R', 'S', 'T'],
+            ['U', 'V', 'W', 'X', 'Y', 'Z']
+        ];
+
+        // 將圖案替換為超市/百貨公司常見的食品與物品
+        const letterEmojis = {
+            'A': '🍎', // Apple 
+            'B': '🍞', // Bread 
+            'C': '🥕', // Carrot 
+            'D': '🍩', // Donut 
+            'E': '🥚', // Egg 
+            'F': '🐟', // Fish 
+            'G': '🍇', // Grapes 
+            'H': '🍯', // Honey 
+            'I': '🍦', // Ice cream 
+            'J': '🧃', // Juice 
+            'K': '🥝', // Kiwi 
+            'L': '🍋', // Lemon 
+            'M': '🥭', // Mango (更新為芒果)
+            'N': '🍜', // Noodles 
+            'O': '🍊', // Orange 
+            'P': '🥔', // Potato 
+            'Q': '🥧', // Quiche 
+            'R': '🍚', // Rice 
+            'S': '🍓', // Strawberry 
+            'T': '🍅', // Tomato 
+            'U': '☂️', // Umbrella 
+            'V': '🥦', // Vegetables 
+            'W': '🍉', // Watermelon 
+            'X': '🎁', // Xmas gift 
+            'Y': '🍠', // Yam 
+            'Z': '🥒'  // Zucchini 
+        };
+
+        // 建立對應的英文單字字典 (供語音朗讀使用)
+        const letterWords = {
+            'A': 'Apple', 'B': 'Bread', 'C': 'Carrot', 'D': 'Donut', 'E': 'Egg',
+            'F': 'Fish', 'G': 'Grapes', 'H': 'Honey', 'I': 'Ice cream', 'J': 'Juice',
+            'K': 'Kiwi', 'L': 'Lemon', 'M': 'Mango', 'N': 'Noodles', 'O': 'Orange',
+            'P': 'Potato', 'Q': 'Quiche', 'R': 'Rice', 'S': 'Strawberry', 'T': 'Tomato',
+            'U': 'Umbrella', 'V': 'Vegetables', 'W': 'Watermelon', 'X': 'Xmas gift',
+            'Y': 'Yam', 'Z': 'Zucchini'
+        };
+        
+        // 遊戲狀態
+        let currentGroup = [];
+        let stageTargets = [];  // 儲存這5關的目標字母
+        let currentStage = 1;
+        const MAX_STAGE = 5; // 改為 5 關
+        
+        let targetBaseLetter = ''; // 目前關卡的目標字母
+        let caughtCount = 0;
+        let gameLoopId = null;
+        let spawnIntervalId = null;
+        let activeItems = [];
+        let isGameOver = false;
+
+        // 優質語音快取
+        let bestEnglishVoice = null;
+
+        // DOM 元素
+        const menuScreen = document.getElementById('menu-screen');
+        const gameScreen = document.getElementById('game-screen');
+        const stageDisplay = document.getElementById('stage-display');
+        const targetUpper = document.getElementById('target-upper');
+        const targetLower = document.getElementById('target-lower');
+        const targetEmoji = document.getElementById('target-emoji');
+        const progressSlots = document.getElementById('progress-slots');
+        const playArea = document.getElementById('play-area');
+        const cart = document.getElementById('cart');
+        const cartInner = document.getElementById('cart-inner');
+        const levelUpScreen = document.getElementById('level-up-screen');
+        const levelUpBox = document.getElementById('level-up-box');
+        const levelUpTitle = document.getElementById('level-up-title');
+        const levelUpMsg = document.getElementById('level-up-msg');
+        const levelUpStars = document.getElementById('level-up-stars');
+        const giantRewardEmoji = document.getElementById('giant-reward-emoji');
+        const fullBagDisplay = document.getElementById('full-bag-display');
+        const collectedItems = document.getElementById('collected-items');
+        const finishBtn = document.getElementById('finish-btn');
+        const celebrationContainer = document.getElementById('celebration-container');
+
+        // 初始化語音庫
+        function loadVoices() {
+            const voices = window.speechSynthesis.getVoices();
+            if (voices.length === 0) return;
+            const engPreferences = ['Google US English', 'Samantha', 'Karen', 'Tessa', 'Microsoft Zira'];
+            for (let pref of engPreferences) {
+                let match = voices.find(v => v.name.includes(pref) && v.lang.startsWith('en'));
+                if (match) { bestEnglishVoice = match; break; }
+            }
+            if (!bestEnglishVoice) bestEnglishVoice = voices.find(v => v.lang.startsWith('en'));
+        }
+        window.speechSynthesis.onvoiceschanged = loadVoices;
+        loadVoices();
+
+        // 購物車拖曳控制邏輯
+        let isDragging = false;
+
+        function updateCartPosition(clientX) {
+            const containerRect = playArea.getBoundingClientRect();
+            // 限制購物車不出界 (左右預留一半車寬)
+            const cartWidth = cart.offsetWidth;
+            let newX = clientX - containerRect.left;
+            
+            if (newX < cartWidth/2) newX = cartWidth/2;
+            if (newX > containerRect.width - cartWidth/2) newX = containerRect.width - cartWidth/2;
+            
+            cart.style.left = `${newX}px`;
+        }
+
+        // 觸控事件 (手機/平板)
+        playArea.addEventListener('touchstart', (e) => {
+            isDragging = true;
+            updateCartPosition(e.touches[0].clientX);
+        }, {passive: false});
+
+        playArea.addEventListener('touchmove', (e) => {
+            if (!isDragging) return;
+            e.preventDefault(); // 防止畫面捲動
+            updateCartPosition(e.touches[0].clientX);
+        }, {passive: false});
+
+        playArea.addEventListener('touchend', () => { isDragging = false; });
+
+        // 滑鼠事件 (電腦)
+        playArea.addEventListener('mousedown', (e) => {
+            isDragging = true;
+            updateCartPosition(e.clientX);
+        });
+        playArea.addEventListener('mousemove', (e) => {
+            if (isDragging) updateCartPosition(e.clientX);
+        });
+        window.addEventListener('mouseup', () => { isDragging = false; });
+
+
+        // 顯示首頁
+        function showMenu() {
+            cleanupGame();
+            gameScreen.classList.add('hidden');
+            menuScreen.classList.remove('hidden');
+        }
+
+        // 清理遊戲狀態
+        function cleanupGame() {
+            isGameOver = true;
+            cancelAnimationFrame(gameLoopId);
+            clearInterval(spawnIntervalId);
+            // 清空所有掉落物
+            activeItems.forEach(item => {
+                if(item.element && item.element.parentNode) {
+                    item.element.parentNode.removeChild(item.element);
+                }
+            });
+            activeItems = [];
+            levelUpScreen.classList.add('hidden');
+            levelUpScreen.classList.remove('flex');
+            levelUpBox.classList.remove('scale-100');
+            cart.style.left = '50%'; // 重置位置
+        }
+
+        // 開始遊戲
+        function startGame(groupIndex) {
+            // 解鎖語音
+            window.speechSynthesis.speak(new SpeechSynthesisUtterance(''));
+
+            currentGroup = letterGroups[groupIndex];
+            
+            // 從群組中隨機挑選 5 個不重複的字母作為這五關的目標 (剛好打亂全部 5 個)
+            let shuffled = [...currentGroup].sort(() => 0.5 - Math.random());
+            stageTargets = shuffled.slice(0, 5);
+            
+            currentStage = 1;
+            
+            menuScreen.classList.add('hidden');
+            gameScreen.classList.remove('hidden');
+            gameScreen.classList.add('flex');
+            
+            startStage();
+        }
+
+        function startStage() {
+            cleanupGame(false); // 不返回首頁的清理
+            
+            isGameOver = false;
+            caughtCount = 0;
+            targetBaseLetter = stageTargets[currentStage - 1]; // 取出本關目標
+            
+            updateUI();
+            
+            // 開始遊戲迴圈
+            gameLoopId = requestAnimationFrame(gameLoop);
+            spawnIntervalId = setInterval(spawnLetter, 1200);
+
+            // 語音提示本關目標
+            setTimeout(() => speakText(`Let's find ${targetBaseLetter}`), 500);
+        }
+
+        // 設置本關 UI
+        function updateUI() {
+            stageDisplay.textContent = `Stage ${currentStage}/${MAX_STAGE}`;
+            targetUpper.textContent = targetBaseLetter;
+            targetLower.textContent = targetBaseLetter.toLowerCase();
+            targetEmoji.textContent = letterEmojis[targetBaseLetter] || '⭐';
+
+            // 建立 5 個空的進度槽
+            progressSlots.innerHTML = '';
+            for(let i=0; i<5; i++) {
+                const slot = document.createElement('div');
+                slot.id = `slot-${i}`;
+                slot.className = 'w-10 h-10 md:w-12 md:h-12 rounded-full border-4 border-dashed border-gray-300 bg-white flex items-center justify-center text-xl md:text-2xl font-black text-green-600 transition-all duration-300';
+                progressSlots.appendChild(slot);
+            }
+        }
+
+        // 清理遊戲狀態
+        function cleanupGame(backToMenu = true) {
+            isGameOver = true;
+            cancelAnimationFrame(gameLoopId);
+            clearInterval(spawnIntervalId);
+            activeItems.forEach(item => {
+                if(item.element && item.element.parentNode) {
+                    item.element.parentNode.removeChild(item.element);
+                }
+            });
+            activeItems = [];
+            
+            levelUpScreen.classList.add('hidden');
+            levelUpScreen.classList.remove('flex');
+            levelUpBox.classList.remove('scale-100');
+            finishBtn.classList.add('hidden');
+            
+            cart.style.left = '50%';
+            
+            if (backToMenu) {
+                gameScreen.classList.add('hidden');
+                menuScreen.classList.remove('hidden');
+            }
+        }
+
+        // 隨機生成掉落字母
+        function spawnLetter() {
+            if (isGameOver) return;
+
+            // 50% 機率生成目標字母(隨機大小寫)，50% 機率生成干擾物
+            let spawnData = {};
+
+            if (Math.random() > 0.5) {
+                // 生成本關目標
+                const displayChar = Math.random() > 0.5 ? targetBaseLetter : targetBaseLetter.toLowerCase();
+                spawnData = { baseLetter: targetBaseLetter, display: displayChar, isTarget: true };
+            } else {
+                // 生成干擾物 (群組內非目標的其他字母)
+                const distractors = currentGroup.filter(l => l !== targetBaseLetter);
+                const randomDist = distractors[Math.floor(Math.random() * distractors.length)];
+                const displayChar = Math.random() > 0.5 ? randomDist : randomDist.toLowerCase();
+                spawnData = { baseLetter: randomDist, display: displayChar, isTarget: false };
+            }
+
+            // 建立 DOM 元素
+            const el = document.createElement('div');
+            
+            // 隨機顏色
+            const colors = ['bg-pink-400 border-pink-500', 'bg-blue-400 border-blue-500', 'bg-green-400 border-green-500', 'bg-yellow-400 border-yellow-500', 'bg-purple-400 border-purple-500'];
+            const colorClass = colors[Math.floor(Math.random() * colors.length)];
+            
+            el.className = `falling-item w-16 h-16 md:w-20 md:h-20 rounded-2xl border-b-4 ${colorClass} text-white font-black text-4xl md:text-5xl shadow-md`;
+            el.textContent = spawnData.display;
+            
+            // 設定初始 X 座標 (預留邊界)
+            const areaWidth = playArea.clientWidth;
+            const startX = 20 + Math.random() * (areaWidth - 100);
+            
+            // 將自定義資料存入物件以便迴圈追蹤
+            const itemObj = {
+                element: el,
+                x: startX,
+                y: -100, // 從畫面外上方開始
+                speed: 3 + Math.random() * 2, // K1適合的速度
+                data: spawnData,
+                isProcessed: false
+            };
+            
+            playArea.appendChild(el);
+            activeItems.push(itemObj);
+        }
+
+        // 遊戲主要迴圈 (處理掉落與碰撞)
+        function gameLoop() {
+            if (isGameOver) return;
+
+            const cartRect = cart.getBoundingClientRect();
+            const areaRect = playArea.getBoundingClientRect();
+
+            for (let i = activeItems.length - 1; i >= 0; i--) {
+                const item = activeItems[i];
+                if (item.isProcessed) continue;
+
+                // 讓字母往下掉
+                item.y += item.speed;
+                item.element.style.transform = `translate(${item.x}px, ${item.y}px)`;
+
+                const itemRect = item.element.getBoundingClientRect();
+
+                // 碰撞偵測 (字母碰到購物車範圍)
+                // 為了讓小朋友容易接，判定範圍稍微放寬 (只要進入車子範圍即可)
+                if (
+                    itemRect.bottom > cartRect.top + 20 &&
+                    itemRect.top < cartRect.bottom &&
+                    itemRect.right > cartRect.left + 10 &&
+                    itemRect.left < cartRect.right - 10
+                ) {
+                    handleCatch(item);
+                } 
+                // 超出畫面底部，直接移除
+                else if (itemRect.top > areaRect.bottom) {
+                    item.element.remove();
+                    activeItems.splice(i, 1);
+                }
+            }
+
+            gameLoopId = requestAnimationFrame(gameLoop);
+        }
+
+        // 處理接住字母的邏輯
+        function handleCatch(item) {
+            item.isProcessed = true;
+
+            // 檢查是不是目標字母
+            if (item.data.isTarget) {
+                
+                // 放入進度槽
+                if (caughtCount < 5) {
+                    const slot = document.getElementById(`slot-${caughtCount}`);
+                    slot.textContent = item.data.display;
+                    slot.classList.replace('border-gray-300', 'border-green-500');
+                    slot.classList.replace('border-dashed', 'border-solid');
+                    slot.classList.replace('bg-white', 'bg-green-100');
+                    slot.classList.add('animate-check');
+                }
+                
+                caughtCount++;
+
+                // 特效與聲音
+                item.element.classList.add('animate-catch');
+                playCheerSound();
+                speakText(`Good!`);
+
+                // 檢查通關
+                if (caughtCount >= 5) {
+                    setTimeout(handleLevelComplete, 500);
+                }
+            } else {
+                // 接錯了彈開
+                bounceItem(item);
+            }
+
+            setTimeout(() => {
+                if (item.element.parentNode) item.element.remove();
+            }, 500);
+            
+            const index = activeItems.indexOf(item);
+            if (index > -1) activeItems.splice(index, 1);
+        }
+
+        // 接錯時彈開的特效
+        function bounceItem(item) {
+            playBoingSound();
+            item.element.classList.add('animate-bounce-away');
+            
+            // 購物車震動回饋
+            cartInner.classList.remove('animate-shake');
+            void cartInner.offsetWidth; // 觸發重繪
+            cartInner.classList.add('animate-shake');
+        }
+
+        // 通關處理
+        function handleLevelComplete() {
+            isGameOver = true;
+            cancelAnimationFrame(gameLoopId);
+            clearInterval(spawnIntervalId);
+            
+            showStars(cart);
+            levelUpScreen.classList.remove('hidden');
+            levelUpScreen.classList.add('flex');
+            
+            // 隱藏/重置過關圖示
+            giantRewardEmoji.classList.add('hidden');
+            fullBagDisplay.classList.add('hidden');
+            
+            setTimeout(() => {
+                levelUpBox.classList.remove('scale-0');
+                levelUpBox.classList.add('scale-100');
+            }, 100);
+
+            // 取得當前字母對應的英文單字與圖案
+            const targetWord = letterWords[targetBaseLetter];
+            const targetEmojiIcon = letterEmojis[targetBaseLetter];
+            const praiseText = `${targetBaseLetter} for ${targetWord}! Got it!`;
+
+            // 判斷是單關通關還是全破
+            if (currentStage >= MAX_STAGE) {
+                // 全破 GAME CLEAR
+                fullBagDisplay.classList.remove('hidden');
+                fullBagDisplay.classList.add('flex');
+                
+                // 顯示這 5 關收集到的所有食物
+                collectedItems.innerHTML = stageTargets.map(letter => `<span>${letterEmojis[letter]}</span>`).join('');
+                
+                levelUpTitle.textContent = "GAME CLEAR!";
+                levelUpTitle.className = "text-5xl md:text-7xl font-black text-pink-500 mb-2 text-center drop-shadow-md animate-bounce";
+                levelUpStars.textContent = "🏆🏆🏆";
+                levelUpMsg.textContent = "購物袋裝滿囉！滿載而歸！";
+                finishBtn.classList.remove('hidden');
+                finishBtn.textContent = "回首頁";
+                
+                playLevelUpSound();
+                speakText(`${praiseText} You are a champion! Game clear!`);
+            } else {
+                // 單關通關 STAGE CLEAR
+                giantRewardEmoji.textContent = targetEmojiIcon;
+                giantRewardEmoji.classList.remove('hidden');
+                
+                // 重新觸發彈出動畫
+                giantRewardEmoji.classList.remove('animate-pop');
+                void giantRewardEmoji.offsetWidth;
+                giantRewardEmoji.classList.add('animate-pop');
+                
+                levelUpTitle.textContent = `STAGE ${currentStage} CLEAR!`;
+                levelUpTitle.className = "text-5xl md:text-7xl font-black text-orange-500 mb-2 text-center drop-shadow-md animate-bounce";
+                levelUpStars.textContent = "🌟🌟🌟";
+                levelUpMsg.textContent = `獲得 ${targetWord}！前往下一區！`;
+                
+                playLevelUpSound();
+                speakText(praiseText);
+
+                // 延遲後自動進入下一關
+                setTimeout(() => {
+                    levelUpBox.classList.remove('scale-100');
+                    levelUpBox.classList.add('scale-0');
+                    setTimeout(() => {
+                        currentStage++;
+                        startStage();
+                    }, 500);
+                }, 4000); // 稍微延長時間讓小朋友看清楚大圖與語音
+            }
+        }
+
+        // 發音邏輯 (全英文)
+        function speakText(text) {
+            if ('speechSynthesis' in window) {
+                window.speechSynthesis.cancel();
+                const utterance = new SpeechSynthesisUtterance(text);
+                utterance.lang = 'en-US';
+                if (bestEnglishVoice) utterance.voice = bestEnglishVoice;
+                utterance.rate = 0.85; 
+                utterance.pitch = 1.2; 
+                window.speechSynthesis.speak(utterance);
+            }
+        }
+
+        // 星星特效
+        function showStars(element) {
+            const rect = element.getBoundingClientRect();
+            const centerX = rect.left + rect.width / 2;
+            const centerY = rect.top + rect.height / 2;
+            
+            for (let i = 0; i < 10; i++) {
+                const star = document.createElement('div');
+                star.textContent = '🌟';
+                star.className = 'star-particle z-50';
+                star.style.left = `${centerX - 25}px`;
+                star.style.top = `${centerY - 25}px`;
+                const angle = (Math.random() * Math.PI * 2);
+                const velocity = 100 + Math.random() * 100;
+                star.style.setProperty('--tx', `${Math.sin(angle) * velocity}px`);
+                star.style.animation = `floatUp 1.2s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards`;
+                celebrationContainer.appendChild(star);
+                setTimeout(() => star.remove(), 1200);
+            }
+        }
+
+        // 音效生成 (Web Audio API)
+        function playCheerSound() {
+            try {
+                const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(600, ctx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(1200, ctx.currentTime + 0.15);
+                gain.gain.setValueAtTime(0.1, ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.4);
+                osc.start(ctx.currentTime);
+                osc.stop(ctx.currentTime + 0.4);
+            } catch (e) {}
+        }
+
+        function playBoingSound() {
+            try {
+                const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(200, ctx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(100, ctx.currentTime + 0.3);
+                gain.gain.setValueAtTime(0.05, ctx.currentTime);
+                gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.3);
+                osc.start(ctx.currentTime);
+                osc.stop(ctx.currentTime + 0.3);
+            } catch (e) {}
+        }
+
+        function playLevelUpSound() {
+            try {
+                const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                const notes = [261.63, 329.63, 392.00, 523.25]; // C E G C
+                notes.forEach((freq, i) => {
+                    const osc = ctx.createOscillator();
+                    const gain = ctx.createGain();
+                    osc.connect(gain);
+                    gain.connect(ctx.destination);
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(freq, ctx.currentTime + i * 0.15);
+                    gain.gain.setValueAtTime(0, ctx.currentTime + i * 0.15);
+                    gain.gain.linearRampToValueAtTime(0.1, ctx.currentTime + i * 0.15 + 0.05);
+                    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + i * 0.15 + 0.4);
+                    osc.start(ctx.currentTime + i * 0.15);
+                    osc.stop(ctx.currentTime + i * 0.15 + 0.4);
+                });
+            } catch (e) {}
+        }
+    </script>
+</body>
+</html>
