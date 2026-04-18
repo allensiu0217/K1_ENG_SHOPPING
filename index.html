@@ -1,13 +1,13 @@
 <!DOCTYPE html>
-<html lang="zh-TW">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>K1 字母超市購物</title>
+    <title>K1 Alphabet Supermarket</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         body {
-            font-family: 'Comic Sans MS', 'Chalkboard SE', '微軟正黑體', sans-serif;
+            font-family: 'Comic Sans MS', 'Chalkboard SE', sans-serif;
             user-select: none;
             -webkit-user-select: none;
             touch-action: none; /* 防止畫面跟著手指滑動 */
@@ -52,6 +52,16 @@
         }
         .animate-bounce-away { animation: bounceAway 0.5s ease-in forwards; }
 
+        /* 購物車接錯時的震動特效 */
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            20% { transform: translateX(-15px) rotate(-10deg); }
+            40% { transform: translateX(15px) rotate(10deg); }
+            60% { transform: translateX(-15px) rotate(-10deg); }
+            80% { transform: translateX(15px) rotate(10deg); }
+        }
+        .animate-shake { animation: shake 0.4s ease-in-out; }
+
         /* 清單打勾動畫 */
         @keyframes checkMark {
             0% { transform: scale(0); }
@@ -78,12 +88,12 @@
     <!-- 主選單畫面 -->
     <div id="menu-screen" class="w-full h-full flex flex-col items-center justify-center p-4 z-20 absolute inset-0 bg-[#fffbeb]">
         <h1 class="text-4xl md:text-6xl font-black text-orange-500 mb-4 text-center drop-shadow-md">
-            🛒 超市字母收集 🍎
+            🛒 Alphabet Supermarket 🍎
         </h1>
         
         <div class="bg-white p-6 rounded-3xl w-full max-w-2xl border-4 border-orange-300 shadow-sm mb-6 text-center">
-            <h2 class="text-2xl text-gray-700 font-bold mb-2">任務說明：</h2>
-            <p class="text-xl text-gray-500 font-bold">左右滑動購物車，接住清單上的 5 個字母！</p>
+            <h2 class="text-2xl text-gray-700 font-bold mb-2">How to Play:</h2>
+            <p class="text-xl text-gray-500 font-bold">Slide the cart left and right to catch 5 correct letters!</p>
         </div>
 
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4 w-full max-w-2xl">
@@ -102,10 +112,10 @@
         <div class="w-full bg-white border-b-4 border-orange-200 p-2 md:p-4 z-10 shadow-sm flex flex-col items-center relative">
             <div class="flex w-full justify-between items-center mb-1">
                 <button onclick="showMenu()" class="btn-3d bg-gray-400 text-white text-sm md:text-lg font-bold py-1 px-3 md:px-4 rounded-xl border-b-4 border-gray-500 hover:bg-gray-300">
-                    🏠 返回
+                    🏠 Back
                 </button>
                 <div id="stage-display" class="text-lg md:text-xl font-black text-blue-500 bg-blue-100 px-4 py-1 rounded-full border-2 border-blue-300 absolute left-1/2 -translate-x-1/2">
-                    Stage 1/3
+                    Stage 1/5
                 </div>
                 <div class="w-16"></div> <!-- 佔位對齊 -->
             </div>
@@ -154,9 +164,9 @@
                 </div>
 
                 <div id="level-up-stars" class="flex gap-4 mb-4 text-5xl md:text-6xl">🌟🌟🌟</div>
-                <p id="level-up-msg" class="text-3xl font-bold text-gray-600 text-center mb-8">收集完成，好棒！</p>
+                <p id="level-up-msg" class="text-3xl font-bold text-gray-600 text-center mb-8">Great Job!</p>
                 <button id="finish-btn" onclick="showMenu()" class="hidden btn-3d bg-green-400 text-white text-3xl font-black py-4 px-10 rounded-3xl border-4 border-green-500 hover:bg-green-300">
-                    再玩一次
+                    Home
                 </button>
             </div>
         </div>
@@ -224,6 +234,10 @@
         let spawnIntervalId = null;
         let activeItems = [];
         let isGameOver = false;
+
+        // 音效與語音全域變數 (防止瀏覽器阻擋引擎與記憶體回收bug)
+        let globalAudioCtx = null;
+        let currentUtterance = null; 
 
         // 優質語音快取
         let bestEnglishVoice = null;
@@ -311,32 +325,36 @@
             menuScreen.classList.remove('hidden');
         }
 
-        // 清理遊戲狀態
-        function cleanupGame() {
-            isGameOver = true;
-            cancelAnimationFrame(gameLoopId);
-            clearInterval(spawnIntervalId);
-            // 清空所有掉落物
-            activeItems.forEach(item => {
-                if(item.element && item.element.parentNode) {
-                    item.element.parentNode.removeChild(item.element);
+        // 初始化音效與語音引擎 (解決無聲問題的核心：必須在使用者點擊時觸發，且全域唯一)
+        function initAudioEngine() {
+            // 1. 初始化 Web Audio API (解決重複建立 Context 導致無聲的限制)
+            if (!globalAudioCtx) {
+                const AudioContext = window.AudioContext || window.webkitAudioContext;
+                if (AudioContext) {
+                    globalAudioCtx = new AudioContext();
                 }
-            });
-            activeItems = [];
-            levelUpScreen.classList.add('hidden');
-            levelUpScreen.classList.remove('flex');
-            levelUpBox.classList.remove('scale-100');
-            cart.style.left = '50%'; // 重置位置
+            }
+            if (globalAudioCtx && globalAudioCtx.state === 'suspended') {
+                globalAudioCtx.resume();
+            }
+
+            // 2. 解鎖語音引擎 (放入空白字元並設為零音量，強制喚醒引擎)
+            if ('speechSynthesis' in window) {
+                window.speechSynthesis.cancel();
+                const unlockUtterance = new SpeechSynthesisUtterance(' ');
+                unlockUtterance.volume = 0;
+                window.speechSynthesis.speak(unlockUtterance);
+            }
         }
 
         // 開始遊戲
         function startGame(groupIndex) {
-            // 解鎖語音
-            window.speechSynthesis.speak(new SpeechSynthesisUtterance(''));
+            // 點擊按鈕時，立刻強制解鎖所有音訊限制
+            initAudioEngine();
 
             currentGroup = letterGroups[groupIndex];
             
-            // 從群組中隨機挑選 5 個不重複的字母作為這五關的目標 (剛好打亂全部 5 個)
+            // 從群組中隨機挑選 5 個不重複的字母作為這五關的目標
             let shuffled = [...currentGroup].sort(() => 0.5 - Math.random());
             stageTargets = shuffled.slice(0, 5);
             
@@ -473,7 +491,7 @@
                 const itemRect = item.element.getBoundingClientRect();
 
                 // 碰撞偵測 (字母碰到購物車範圍)
-                // 為了讓小朋友容易接，判定範圍稍微放寬 (只要進入車子範圍即可)
+                // 為了讓小朋友容易接，判定範圍稍微放寬
                 if (
                     itemRect.bottom > cartRect.top + 20 &&
                     itemRect.top < cartRect.bottom &&
@@ -514,14 +532,16 @@
                 // 特效與聲音
                 item.element.classList.add('animate-catch');
                 playCheerSound();
-                speakText(`Good!`);
+                
+                // 讀出該字母的發音
+                speakText(targetBaseLetter);
 
-                // 檢查通關
+                // 檢查通關，將延遲從 500ms 延長至 800ms，確保最後一個字母能完整發音
                 if (caughtCount >= 5) {
-                    setTimeout(handleLevelComplete, 500);
+                    setTimeout(handleLevelComplete, 800);
                 }
             } else {
-                // 接錯了彈開
+                // 接錯了彈開與震動
                 bounceItem(item);
             }
 
@@ -533,14 +553,14 @@
             if (index > -1) activeItems.splice(index, 1);
         }
 
-        // 接錯時彈開的特效
+        // 接錯時彈開與震動的特效
         function bounceItem(item) {
             playBoingSound();
             item.element.classList.add('animate-bounce-away');
             
             // 購物車震動回饋
             cartInner.classList.remove('animate-shake');
-            void cartInner.offsetWidth; // 觸發重繪
+            void cartInner.offsetWidth; // 觸發重繪以重新啟動動畫
             cartInner.classList.add('animate-shake');
         }
 
@@ -566,7 +586,9 @@
             // 取得當前字母對應的英文單字與圖案
             const targetWord = letterWords[targetBaseLetter];
             const targetEmojiIcon = letterEmojis[targetBaseLetter];
-            const praiseText = `${targetBaseLetter} for ${targetWord}! Got it!`;
+            
+            // 依要求，通關時播出：A for Apple, you got it!
+            const praiseText = `${targetBaseLetter} for ${targetWord}, you got it!`;
 
             // 判斷是單關通關還是全破
             if (currentStage >= MAX_STAGE) {
@@ -580,9 +602,9 @@
                 levelUpTitle.textContent = "GAME CLEAR!";
                 levelUpTitle.className = "text-5xl md:text-7xl font-black text-pink-500 mb-2 text-center drop-shadow-md animate-bounce";
                 levelUpStars.textContent = "🏆🏆🏆";
-                levelUpMsg.textContent = "購物袋裝滿囉！滿載而歸！";
+                levelUpMsg.textContent = "Bag is full! Awesome job!";
                 finishBtn.classList.remove('hidden');
-                finishBtn.textContent = "回首頁";
+                finishBtn.textContent = "Home";
                 
                 playLevelUpSound();
                 speakText(`${praiseText} You are a champion! Game clear!`);
@@ -599,7 +621,7 @@
                 levelUpTitle.textContent = `STAGE ${currentStage} CLEAR!`;
                 levelUpTitle.className = "text-5xl md:text-7xl font-black text-orange-500 mb-2 text-center drop-shadow-md animate-bounce";
                 levelUpStars.textContent = "🌟🌟🌟";
-                levelUpMsg.textContent = `獲得 ${targetWord}！前往下一區！`;
+                levelUpMsg.textContent = `Got ${targetWord}! Next stage!`;
                 
                 playLevelUpSound();
                 speakText(praiseText);
@@ -620,12 +642,16 @@
         function speakText(text) {
             if ('speechSynthesis' in window) {
                 window.speechSynthesis.cancel();
-                const utterance = new SpeechSynthesisUtterance(text);
-                utterance.lang = 'en-US';
-                if (bestEnglishVoice) utterance.voice = bestEnglishVoice;
-                utterance.rate = 0.85; 
-                utterance.pitch = 1.2; 
-                window.speechSynthesis.speak(utterance);
+                
+                // 將語音物件指派給全域變數，防止被瀏覽器(特別是Safari)的記憶體回收機制中斷
+                currentUtterance = new SpeechSynthesisUtterance(text);
+                currentUtterance.lang = 'en-US';
+                if (bestEnglishVoice) currentUtterance.voice = bestEnglishVoice;
+                currentUtterance.rate = 0.85; 
+                currentUtterance.pitch = 1.2; 
+                currentUtterance.volume = 1;
+                
+                window.speechSynthesis.speak(currentUtterance);
             }
         }
 
@@ -652,55 +678,55 @@
 
         // 音效生成 (Web Audio API)
         function playCheerSound() {
+            if (!globalAudioCtx) return;
             try {
-                const ctx = new (window.AudioContext || window.webkitAudioContext)();
-                const osc = ctx.createOscillator();
-                const gain = ctx.createGain();
+                const osc = globalAudioCtx.createOscillator();
+                const gain = globalAudioCtx.createGain();
                 osc.connect(gain);
-                gain.connect(ctx.destination);
+                gain.connect(globalAudioCtx.destination);
                 osc.type = 'sine';
-                osc.frequency.setValueAtTime(600, ctx.currentTime);
-                osc.frequency.exponentialRampToValueAtTime(1200, ctx.currentTime + 0.15);
-                gain.gain.setValueAtTime(0.1, ctx.currentTime);
-                gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.4);
-                osc.start(ctx.currentTime);
-                osc.stop(ctx.currentTime + 0.4);
+                osc.frequency.setValueAtTime(600, globalAudioCtx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(1200, globalAudioCtx.currentTime + 0.15);
+                gain.gain.setValueAtTime(0.1, globalAudioCtx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, globalAudioCtx.currentTime + 0.4);
+                osc.start(globalAudioCtx.currentTime);
+                osc.stop(globalAudioCtx.currentTime + 0.4);
             } catch (e) {}
         }
 
         function playBoingSound() {
+            if (!globalAudioCtx) return;
             try {
-                const ctx = new (window.AudioContext || window.webkitAudioContext)();
-                const osc = ctx.createOscillator();
-                const gain = ctx.createGain();
+                const osc = globalAudioCtx.createOscillator();
+                const gain = globalAudioCtx.createGain();
                 osc.connect(gain);
-                gain.connect(ctx.destination);
+                gain.connect(globalAudioCtx.destination);
                 osc.type = 'triangle';
-                osc.frequency.setValueAtTime(200, ctx.currentTime);
-                osc.frequency.exponentialRampToValueAtTime(100, ctx.currentTime + 0.3);
-                gain.gain.setValueAtTime(0.05, ctx.currentTime);
-                gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.3);
-                osc.start(ctx.currentTime);
-                osc.stop(ctx.currentTime + 0.3);
+                osc.frequency.setValueAtTime(200, globalAudioCtx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(100, globalAudioCtx.currentTime + 0.3);
+                gain.gain.setValueAtTime(0.05, globalAudioCtx.currentTime);
+                gain.gain.linearRampToValueAtTime(0, globalAudioCtx.currentTime + 0.3);
+                osc.start(globalAudioCtx.currentTime);
+                osc.stop(globalAudioCtx.currentTime + 0.3);
             } catch (e) {}
         }
 
         function playLevelUpSound() {
+            if (!globalAudioCtx) return;
             try {
-                const ctx = new (window.AudioContext || window.webkitAudioContext)();
                 const notes = [261.63, 329.63, 392.00, 523.25]; // C E G C
                 notes.forEach((freq, i) => {
-                    const osc = ctx.createOscillator();
-                    const gain = ctx.createGain();
+                    const osc = globalAudioCtx.createOscillator();
+                    const gain = globalAudioCtx.createGain();
                     osc.connect(gain);
-                    gain.connect(ctx.destination);
+                    gain.connect(globalAudioCtx.destination);
                     osc.type = 'sine';
-                    osc.frequency.setValueAtTime(freq, ctx.currentTime + i * 0.15);
-                    gain.gain.setValueAtTime(0, ctx.currentTime + i * 0.15);
-                    gain.gain.linearRampToValueAtTime(0.1, ctx.currentTime + i * 0.15 + 0.05);
-                    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + i * 0.15 + 0.4);
-                    osc.start(ctx.currentTime + i * 0.15);
-                    osc.stop(ctx.currentTime + i * 0.15 + 0.4);
+                    osc.frequency.setValueAtTime(freq, globalAudioCtx.currentTime + i * 0.15);
+                    gain.gain.setValueAtTime(0, globalAudioCtx.currentTime + i * 0.15);
+                    gain.gain.linearRampToValueAtTime(0.1, globalAudioCtx.currentTime + i * 0.15 + 0.05);
+                    gain.gain.exponentialRampToValueAtTime(0.01, globalAudioCtx.currentTime + i * 0.15 + 0.4);
+                    osc.start(globalAudioCtx.currentTime + i * 0.15);
+                    osc.stop(globalAudioCtx.currentTime + i * 0.15 + 0.4);
                 });
             } catch (e) {}
         }
